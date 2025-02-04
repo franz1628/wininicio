@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  php-api:
+    build: ./php-api
+    ports:
+      - "8000:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/index.php"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DB: users_db
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: users_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+  node-api:
+    build: ./node-api
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+    environment:
+      SQL_SERVER_HOST: sqlserver
+      SQL_SERVER_USER: sa
+      SQL_SERVER_PASSWORD: StrongP@ssw0rd!
+      SQL_SERVER_DB: transactions_db
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  sqlserver:
+    build: ./sqlserver
+    environment:
+      SA_PASSWORD: StrongP@ssw0rd!
+      ACCEPT_EULA: Y
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "sleep 15 && /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'StrongP@ssw0rd!' -Q 'SELECT 1' || exit 1"]
+      interval: 20s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      - ./sqlserver/init.sql:/tmp/init.sql
+    entrypoint: [
+      "/bin/bash", "-c",
+      "/opt/mssql/bin/sqlservr & sleep 20 && /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'StrongP@ssw0rd!' -d master -i /tmp/init.sql && wait"
+    ]
+
+
+  csharp-api:
+    build: ./csharp-api
+    ports:
+      - "5000:80"
+    depends_on:
+      php-api:
+        condition: service_healthy
+      node-api:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  sqlserver-data:
